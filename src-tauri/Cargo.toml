@@ -2,7 +2,7 @@
 name = "gestro"
 version = "0.1.0"
 description = "OS-wide mouse gesture launcher"
-authors = ["you"]
+authors = ["Markus Obendrauf"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
