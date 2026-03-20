@@ -54,7 +54,7 @@ npx svelte-check
 cd src-tauri && cargo check
 
 # Build for release
-npm run tauri build
+NO_STRIP=1 npm run tauri build
 ```
 
 ## Architecture
