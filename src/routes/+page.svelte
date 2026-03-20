@@ -1,156 +1,205 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import PieWheel from '$lib/PieWheel.svelte';
+  import ShortcutRecorder from '$lib/ShortcutRecorder.svelte';
+  import type { Config, Direction } from '$lib/types';
+  import { defaultConfig } from '$lib/types';
 
-  let name = $state("");
-  let greetMsg = $state("");
+  let config = $state<Config>(defaultConfig());
+  let selected = $state<Direction | null>(null);
+  let saved = $state(false);
+  let saveError = $state<string | null>(null);
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  onMount(async () => {
+    try {
+      config = await invoke<Config>('get_config');
+    } catch (e) {
+      console.error('Failed to load config', e);
+    }
+  });
+
+  function openRecorder(dir: Direction) {
+    selected = dir;
   }
+
+  function handleConfirm(dir: Direction, keys: string[] | null) {
+    config = {
+      ...config,
+      directions: {
+        ...config.directions,
+        [dir]: keys ? { keys } : null,
+      },
+    };
+    selected = null;
+  }
+
+  async function handleSave() {
+    saveError = null;
+    try {
+      await invoke('save_config', { newConfig: config });
+      saved = true;
+      setTimeout(() => (saved = false), 2000);
+    } catch (e) {
+      saveError = String(e);
+    }
+  }
+
+  let boundCount = $derived(
+    Object.values(config.directions).filter((v) => v !== null).length
+  );
 </script>
 
-<main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
+<div class="app">
+  <header>
+    <div class="brand">pie</div>
+    <div class="meta">{boundCount} / 8 gestures bound</div>
+  </header>
 
-  <div class="row">
-    <a href="https://vite.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
-  </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
+  <main>
+    <PieWheel {config} onSelect={openRecorder} />
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
-</main>
+    <div class="controls">
+      <label class="threshold-row">
+        <span>Threshold</span>
+        <input
+          type="range"
+          min="5"
+          max="60"
+          step="1"
+          bind:value={config.threshold_px}
+        />
+        <span class="threshold-val">{config.threshold_px}px</span>
+      </label>
+
+      <button class="save-btn" class:saved onclick={handleSave}>
+        {saved ? '✓ Saved' : 'Save'}
+      </button>
+    </div>
+
+    {#if saveError}
+      <div class="error">{saveError}</div>
+    {/if}
+  </main>
+
+  {#if selected !== null}
+    <ShortcutRecorder
+      direction={selected}
+      current={config.directions[selected]?.keys ?? null}
+      onConfirm={(keys) => handleConfirm(selected!, keys)}
+      onCancel={() => (selected = null)}
+    />
+  {/if}
+</div>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  :global(*, *::before, *::after) { box-sizing: border-box; }
+  :global(body) {
+    margin: 0;
+    background: #111111;
+    color: #e0e0e0;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    overflow: hidden;
   }
 
-  a:hover {
-    color: #24c8db;
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
   }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid #1e1e1e;
+    flex-shrink: 0;
   }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
 
+  .brand {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #4fc3f7;
+  }
+
+  .meta {
+    font-size: 12px;
+    color: #555555;
+    letter-spacing: 0.3px;
+  }
+
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: #161616;
+    border: 1px solid #222222;
+    border-radius: 10px;
+    padding: 12px 20px;
+    width: 400px;
+  }
+
+  .threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    font-size: 13px;
+    color: #888888;
+  }
+
+  input[type='range'] {
+    flex: 1;
+    accent-color: #4fc3f7;
+    height: 4px;
+    cursor: pointer;
+  }
+
+  .threshold-val {
+    color: #e0e0e0;
+    font-size: 12px;
+    min-width: 32px;
+    text-align: right;
+  }
+
+  .save-btn {
+    padding: 7px 20px;
+    background: #1a4a5e;
+    color: #4fc3f7;
+    border: 1px solid #2a6a7e;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+
+  .save-btn:hover { background: #1e5570; }
+
+  .save-btn.saved {
+    background: #1a3a20;
+    color: #6fcf97;
+    border-color: #2a5a30;
+  }
+
+  .error {
+    color: #f07070;
+    font-size: 12px;
+    max-width: 400px;
+    text-align: center;
+  }
 </style>

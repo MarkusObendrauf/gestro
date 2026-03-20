@@ -16,7 +16,9 @@
   } = $props();
 
   let recording = $state(false);
-  let captured = $state<string[]>(current ?? []);
+  // Snapshot the prop at open time — captured is independently editable local state
+  // svelte-ignore state_referenced_locally
+  let captured = $state<string[]>(current ? [...current] : []);
 
   const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
 
@@ -56,11 +58,11 @@
 </script>
 
 <!-- Backdrop -->
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div class="backdrop" onclick={onCancel}>
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div class="backdrop" role="presentation" onclick={onCancel}>
   <!-- Card — stop propagation so clicks inside don't dismiss -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="card" onclick={(e) => e.stopPropagation()}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="card" role="dialog" aria-modal="true" aria-label="Assign shortcut" tabindex="-1" onclick={(e) => e.stopPropagation()}>
     <div class="dir-badge">{direction}</div>
     <h2>Assign shortcut</h2>
 
