@@ -1,0 +1,186 @@
+use std::sync::{Arc, Mutex};
+
+use evdev::{Device, EventType, InputEventKind, Key, RelativeAxisType};
+use uinput::event::relative::Position;
+
+use crate::config::Config;
+use crate::gesture::{GestureEngine, GestureEvent, GestureOutcome, Point};
+use crate::input::InputMessage;
+use crate::shortcut::keys_to_uinput;
+
+/// Find the first device that reports BTN_RIGHT and REL_X (i.e. a mouse).
+fn find_mouse() -> Option<Device> {
+    for (_, device) in evdev::enumerate() {
+        let supported = device.supported_events();
+        let has_rel = supported.contains(EventType::RELATIVE);
+        let has_key = supported.contains(EventType::KEY);
+        if !has_rel || !has_key {
+            continue;
+        }
+        if let Some(keys) = device.supported_keys() {
+            if !keys.contains(Key::BTN_RIGHT) {
+                continue;
+            }
+        } else {
+            continue;
+        }
+        if let Some(axes) = device.supported_relative_axes() {
+            if axes.contains(RelativeAxisType::REL_X) {
+                return Some(device);
+            }
+        }
+    }
+    None
+}
+
+/// Build a uinput virtual keyboard + mouse for re-emitting events.
+fn create_virtual_device() -> Result<uinput::Device, uinput::Error> {
+    uinput::default()?
+        .name("pie-virtual")?
+        .event(uinput::event::Keyboard::All)?
+        .event(uinput::event::relative::Relative::Position(Position::X))?
+        .event(uinput::event::relative::Relative::Position(Position::Y))?
+        .create()
+}
+
+/// Emit a right-click (press + release) on the virtual device.
+/// Uses raw write since uinput's high-level API targets keyboard keys only.
+fn passthrough_right_click(vdev: &mut uinput::Device) {
+    // EV_KEY = 1, BTN_RIGHT = 0x111 = 273
+    let _ = vdev.write(1, 273, 1); // press
+    let _ = vdev.synchronize();
+    let _ = vdev.write(1, 273, 0); // release
+    let _ = vdev.synchronize();
+}
+
+/// Press all keys in a shortcut, then release them in reverse.
+fn emit_shortcut(vdev: &mut uinput::Device, shortcut: &crate::config::Shortcut) {
+    let codes = keys_to_uinput(&shortcut.keys);
+    for key in &codes {
+        let _ = vdev.press(key);
+    }
+    let _ = vdev.synchronize();
+    for key in codes.iter().rev() {
+        let _ = vdev.release(key);
+    }
+    let _ = vdev.synchronize();
+}
+
+/// Main loop for the Linux input backend.
+/// Runs on a dedicated thread; blocks on evdev events.
+pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessage>) {
+    let mut mouse = match find_mouse() {
+        Some(d) => d,
+        None => {
+            log::error!("pie: no mouse device found in /dev/input — make sure you are in the 'input' group");
+            return;
+        }
+    };
+
+    if let Err(e) = mouse.grab() {
+        log::error!("pie: failed to grab mouse device: {e}. Make sure you are in the 'input' group.");
+        return;
+    }
+    log::info!("pie: mouse grabbed successfully");
+
+    let mut vdev = match create_virtual_device() {
+        Ok(d) => d,
+        Err(e) => {
+            log::error!("pie: failed to create uinput virtual device: {e}. Make sure /dev/uinput is accessible.");
+            // Release grab before returning
+            let _ = mouse.ungrab();
+            return;
+        }
+    };
+
+    let threshold = {
+        let cfg = config.lock().unwrap();
+        cfg.threshold_px
+    };
+    let mut engine = GestureEngine::new(threshold);
+    let mut cursor = Point::new(0.0, 0.0);
+
+    loop {
+        // Check for config updates / stop signal (non-blocking)
+        match rx.try_recv() {
+            Ok(InputMessage::Stop) => break,
+            Ok(InputMessage::UpdateConfig(new_cfg)) => {
+                engine.update_threshold(new_cfg.threshold_px);
+                let mut cfg = config.lock().unwrap();
+                *cfg = new_cfg;
+            }
+            Err(_) => {}
+        }
+
+        // Fetch events (blocking)
+        let events = match mouse.fetch_events() {
+            Ok(e) => e,
+            Err(e) => {
+                log::error!("pie: evdev error: {e}");
+                break;
+            }
+        };
+
+        for ev in events {
+            match ev.kind() {
+                InputEventKind::Key(Key::BTN_RIGHT) => {
+                    let outcome = if ev.value() == 1 {
+                        engine.process(GestureEvent::RightDown {
+                            pos: cursor,
+                        })
+                    } else if ev.value() == 0 {
+                        engine.process(GestureEvent::RightUp)
+                    } else {
+                        GestureOutcome::None
+                    };
+
+                    handle_outcome(outcome, &config, &mut vdev);
+                }
+
+                InputEventKind::RelAxis(RelativeAxisType::REL_X) => {
+                    cursor.x += ev.value() as f64;
+                    let outcome = engine.process(GestureEvent::MouseMove { pos: cursor });
+                    handle_outcome(outcome, &config, &mut vdev);
+                }
+
+                InputEventKind::RelAxis(RelativeAxisType::REL_Y) => {
+                    cursor.y += ev.value() as f64;
+                    let outcome = engine.process(GestureEvent::MouseMove { pos: cursor });
+                    handle_outcome(outcome, &config, &mut vdev);
+                }
+
+                // Pass through all other events (left click, scroll, etc.)
+                _ => {
+                    // Re-emit raw event via uinput so the system sees it normally.
+                    // We use a small delay to avoid kernel buffer collisions.
+                    let _ = vdev.write(ev.event_type().0.into(), ev.code().into(), ev.value());
+                }
+            }
+        }
+    }
+
+    let _ = mouse.ungrab();
+    log::info!("pie: mouse ungrabbed, input thread exiting");
+}
+
+fn handle_outcome(
+    outcome: GestureOutcome,
+    config: &Arc<Mutex<Config>>,
+    vdev: &mut uinput::Device,
+) {
+    match outcome {
+        GestureOutcome::None => {}
+        GestureOutcome::Passthrough => {
+            passthrough_right_click(vdev);
+        }
+        GestureOutcome::Gesture(dir) => {
+            let cfg = config.lock().unwrap();
+            if let Some(Some(shortcut)) = cfg.directions.get(&dir) {
+                log::info!("pie: gesture {:?} → {:?}", dir, shortcut.keys);
+                emit_shortcut(vdev, shortcut);
+            } else {
+                log::debug!("pie: gesture {:?} — no shortcut bound", dir);
+            }
+        }
+    }
+}
