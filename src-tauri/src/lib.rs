@@ -114,19 +114,38 @@ pub fn run() {
             // ---------------------------------------------------------------
             // System tray
             // ---------------------------------------------------------------
+            let toggle_item = MenuItemBuilder::new("Disable")
+                .id("toggle")
+                .build(app)?;
             let settings_item = MenuItemBuilder::new("Settings")
                 .id("settings")
                 .build(app)?;
             let quit_item = MenuItemBuilder::new("Quit").id("quit").build(app)?;
             let menu = MenuBuilder::new(app)
-                .items(&[&settings_item, &quit_item])
+                .items(&[&toggle_item, &settings_item, &quit_item])
                 .build()?;
+
+            // Track whether gesture detection is enabled (starts enabled).
+            let gesture_enabled = Arc::new(AtomicBool::new(true));
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("gestro")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "toggle" => {
+                        let tx = app.state::<std::sync::mpsc::SyncSender<InputMessage>>();
+                        let enabled = gesture_enabled.fetch_xor(true, Ordering::SeqCst);
+                        if enabled {
+                            // Was enabled → now disabled
+                            let _ = tx.try_send(InputMessage::Pause);
+                            let _ = toggle_item.set_text("Enable");
+                        } else {
+                            // Was disabled → now enabled
+                            let _ = tx.try_send(InputMessage::Resume);
+                            let _ = toggle_item.set_text("Disable");
+                        }
+                    }
                     "settings" => {
                         if let Some(win) = app.get_webview_window("main") {
                             // Wayland: each hide() unmaps the xdg_toplevel surface,
