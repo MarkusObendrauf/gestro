@@ -18,6 +18,14 @@ If you don't move far enough (configurable threshold), right-click passes throug
 
 gestro requires Accessibility permission to intercept mouse events system-wide. On first launch macOS will prompt you; if it doesn't, go to **System Settings → Privacy & Security → Accessibility** and enable gestro.
 
+**"App is damaged" / Gatekeeper block:** because gestro is not signed with an Apple Developer certificate, macOS may block it. After dragging gestro to Applications, run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/gestro.app
+```
+
+Then open it normally.
+
 ### Linux (X11 / Wayland)
 
 gestro needs access to raw input devices and the uinput kernel module:
