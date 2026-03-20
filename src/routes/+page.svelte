@@ -28,8 +28,8 @@
 
     // Fit window to content
     await tick();
-    const h = appEl!.scrollHeight;
-    const w = appEl!.scrollWidth;
+    const h = document.body.scrollHeight;
+    const w = document.body.scrollWidth;
     const win = getCurrentWindow();
     await win.setMinSize(new LogicalSize(w, h));
     const current = await win.outerSize();
@@ -83,11 +83,9 @@
   let boundCount = $derived(
     Object.values(config.directions).filter((v) => v !== null).length
   );
-
-  let appEl = $state<HTMLDivElement | null>(null);
 </script>
 
-<div class="app" bind:this={appEl}>
+<div class="app">
   <header>
     <div class="brand">gestro</div>
     <div class="meta">{boundCount} / 8 gestures bound</div>
@@ -148,7 +146,7 @@
   .app {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
   }
 
   header {
