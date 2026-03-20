@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE,
+    SendInput, INPUT, INPUT_0, INPUT_MOUSE,
     MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEINPUT, MOUSE_EVENT_FLAGS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -143,37 +143,14 @@ unsafe extern "system" fn low_level_mouse_proc(
     }
 }
 
-/// Inject a synthetic right-click (down + up) at absolute screen coordinates.
-/// Uses MOUSEEVENTF_ABSOLUTE so it works correctly across multi-monitor setups.
-unsafe fn inject_right_click(x: i32, y: i32) {
-    // Normalize to the 0–65535 range that MOUSEEVENTF_ABSOLUTE expects.
-    // GetSystemMetrics(SM_CXSCREEN / SM_CYSCREEN) gives the primary monitor resolution,
-    // but for multi-monitor we use the virtual desktop dimensions.
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-        SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-    };
-    let virt_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    let virt_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    let virt_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    let virt_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-
-    let norm_x = if virt_w > 0 {
-        ((x - virt_x) as i64 * 65535 / virt_w as i64) as i32
-    } else {
-        x
-    };
-    let norm_y = if virt_h > 0 {
-        ((y - virt_y) as i64 * 65535 / virt_h as i64) as i32
-    } else {
-        y
-    };
-
-    let move_flags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
-
+/// Inject a synthetic right-click (down + up) at the current cursor position.
+/// We do not move the cursor — it is already at the correct position when the
+/// user releases the button, so adding MOUSEEVENTF_MOVE would only introduce
+/// rounding errors from the 0-65535 normalisation and shift the cursor.
+unsafe fn inject_right_click(_x: i32, _y: i32) {
     let inputs = [
-        make_mouse_input(norm_x, norm_y, MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_RIGHTDOWN | move_flags),
-        make_mouse_input(norm_x, norm_y, MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_RIGHTUP),
+        make_mouse_input(0, 0, MOUSEEVENTF_RIGHTDOWN),
+        make_mouse_input(0, 0, MOUSEEVENTF_RIGHTUP),
     ];
 
     SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
