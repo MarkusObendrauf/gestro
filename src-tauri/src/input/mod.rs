@@ -6,6 +6,9 @@ pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
 
+#[cfg(target_os = "windows")]
+pub mod windows;
+
 /// Message sent from the main thread to the input thread.
 #[allow(dead_code)]
 pub enum InputMessage {
@@ -23,7 +26,10 @@ pub use linux::run as run_platform;
 #[cfg(target_os = "macos")]
 pub use macos::run as run_platform;
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+pub use windows::run as run_platform;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 pub fn run_platform(
     _config: std::sync::Arc<std::sync::Mutex<Config>>,
     _rx: std::sync::mpsc::Receiver<InputMessage>,
