@@ -4,6 +4,7 @@ mod input;
 mod shortcut;
 
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
@@ -70,6 +71,10 @@ pub fn run() {
             let _ = win.hide();
             let win2 = win.clone();
             let tx_win = tx_for_window.clone();
+            // Flag set just before maximize(); cleared in Resized to trigger
+            // the deferred unmaximize once the compositor has applied the state.
+            let pending_unmax = Arc::new(AtomicBool::new(false));
+            let pending_unmax_event = Arc::clone(&pending_unmax);
             win.on_window_event(move |event| match event {
                 // Intercept the OS close button: hide to tray instead of closing.
                 WindowEvent::CloseRequested { api, .. } => {
@@ -90,6 +95,16 @@ pub fn run() {
                 WindowEvent::Focused(true) => {
                     let _ = tx_win.try_send(InputMessage::Pause);
                 }
+                // Wayland: after the compositor applies the maximize configure,
+                // a Resized event fires. Use that as the signal to restore.
+                WindowEvent::Resized(_) => {
+                    if pending_unmax_event.swap(false, Ordering::SeqCst) {
+                        let _ = win2.unmaximize();
+                        // Request center again after unmaximize so the compositor
+                        // positions the restored window at center, not top-left.
+                        let _ = win2.center();
+                    }
+                }
                 _ => {}
             });
 
@@ -108,11 +123,21 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("pie")
-                .on_menu_event(|app, event| match event.id().as_ref() {
+                .on_menu_event(move |app, event| match event.id().as_ref() {
                     "settings" => {
                         if let Some(win) = app.get_webview_window("main") {
+                            // Wayland: each hide() unmaps the xdg_toplevel surface,
+                            // so re-showing needs a fresh configure/ack handshake.
+                            // We maximize immediately after show; the Resized event
+                            // handler above will unmaximize once the compositor has
+                            // applied the state, leaving the window at normal size.
+                            pending_unmax.store(true, Ordering::SeqCst);
                             let _ = win.show();
+                            // center() before maximize so the compositor saves a
+                            // centered restore geometry instead of top-left.
+                            let _ = win.center();
                             let _ = win.set_focus();
+                            let _ = win.maximize();
                             // Release the evdev grab while settings is visible so
                             // the compositor receives native mouse events and WM
                             // decorations (close/minimize/maximize) work normally.
