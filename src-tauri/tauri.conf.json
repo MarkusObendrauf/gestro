@@ -30,6 +30,18 @@
     "active": true,
     "targets": "all",
     "publisher": "Markus Obendrauf",
+    "linux": {
+      "rpm": {
+        "files": {
+          "/usr/share/metainfo/com.gestro.app.metainfo.xml": "metainfo.xml"
+        }
+      },
+      "deb": {
+        "files": {
+          "/usr/share/metainfo/com.gestro.app.metainfo.xml": "metainfo.xml"
+        }
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

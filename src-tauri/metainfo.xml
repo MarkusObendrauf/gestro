@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.gestro.app</id>
+  <name>gestro</name>
+  <summary>OS-wide mouse gesture launcher</summary>
+  <developer>
+    <name>Markus Obendrauf</name>
+  </developer>
+  <developer_name>Markus Obendrauf</developer_name>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Hold right-click, move in one of 8 compass directions, release — fires a keyboard shortcut. Invisible to the user; configured via a settings window.</p>
+  </description>
+  <launchable type="desktop-id">gestro.desktop</launchable>
+  <url type="homepage">https://github.com/MarkusObendrauf/gestro</url>
+</component>
