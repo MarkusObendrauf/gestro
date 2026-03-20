@@ -35,9 +35,12 @@ fn find_mouse() -> Option<Device> {
 }
 
 /// Build a uinput virtual keyboard + mouse for re-emitting events.
-fn create_virtual_device(name: &str) -> Result<uinput::Device, uinput::Error> {
+fn create_virtual_device(name: &str, id: &evdev::InputId) -> Result<uinput::Device, uinput::Error> {
     uinput::default()?
         .name(name)?
+        .bus(id.bus_type().0)
+        .vendor(id.vendor())
+        .product(id.product())
         .event(uinput::event::Keyboard::All)?
         .event(Controller::Mouse(Mouse::Left))?
         .event(Controller::Mouse(Mouse::Right))?
@@ -98,7 +101,8 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     log::info!("pie: mouse grabbed successfully");
 
     let mouse_name = mouse.name().unwrap_or("pie-virtual").to_string();
-    let mut vdev = match create_virtual_device(&mouse_name) {
+    let mouse_id = mouse.input_id();
+    let mut vdev = match create_virtual_device(&mouse_name, &mouse_id) {
         Ok(d) => d,
         Err(e) => {
             log::error!("pie: failed to create uinput virtual device: {e}. Make sure /dev/uinput is accessible.");
