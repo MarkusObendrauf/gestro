@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
   import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
   import GestroWheel from '$lib/GestroWheel.svelte';
   import ShortcutRecorder from '$lib/ShortcutRecorder.svelte';
@@ -23,6 +24,19 @@
       autostart = await isEnabled();
     } catch (e) {
       console.error('Failed to load autostart state', e);
+    }
+
+    // Fit window to content
+    await tick();
+    const h = document.body.scrollHeight;
+    const w = document.body.scrollWidth;
+    const win = getCurrentWindow();
+    await win.setMinSize(new LogicalSize(w, h));
+    const current = await win.outerSize();
+    const sf = await win.scaleFactor();
+    const currentH = current.height / sf;
+    if (currentH < h) {
+      await win.setSize(new LogicalSize(current.width / sf, h));
     }
   });
 
