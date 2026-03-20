@@ -1,5 +1,7 @@
 # gestro
 
+![gestro settings window](screenshot.png)
+
 An OS-wide mouse gesture launcher for macOS, Windows, and Linux. Hold right-click, move in one of 8 compass directions, release — a configured keyboard shortcut fires. Completely invisible during use; configured through a system tray settings window.
 
 ## How it works
