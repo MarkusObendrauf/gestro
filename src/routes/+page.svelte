@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import PieWheel from '$lib/PieWheel.svelte';
+  import GestroWheel from '$lib/GestroWheel.svelte';
   import ShortcutRecorder from '$lib/ShortcutRecorder.svelte';
   import type { Config, Direction } from '$lib/types';
   import { defaultConfig } from '$lib/types';
@@ -52,12 +52,12 @@
 
 <div class="app">
   <header>
-    <div class="brand">pie</div>
+    <div class="brand">gestro</div>
     <div class="meta">{boundCount} / 8 gestures bound</div>
   </header>
 
   <main>
-    <PieWheel {config} onSelect={openRecorder} />
+    <GestroWheel {config} onSelect={openRecorder} />
 
     <div class="controls">
       <label class="threshold-row">

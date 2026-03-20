@@ -103,7 +103,7 @@ pub fn key_from_name(name: &str) -> Option<AnyKey> {
         "browserforward" | "browser_forward" => Some(AnyKey::Misc(Misc::Forward)),
 
         _ => {
-            log::warn!("pie: unknown key name '{name}'");
+            log::warn!("gestro: unknown key name '{name}'");
             None
         }
     }

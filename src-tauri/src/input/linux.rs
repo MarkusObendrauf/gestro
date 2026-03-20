@@ -89,23 +89,23 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     let mut mouse = match find_mouse() {
         Some(d) => d,
         None => {
-            log::error!("pie: no mouse device found in /dev/input — make sure you are in the 'input' group");
+            log::error!("gestro: no mouse device found in /dev/input — make sure you are in the 'input' group");
             return;
         }
     };
 
     if let Err(e) = mouse.grab() {
-        log::error!("pie: failed to grab mouse device: {e}. Make sure you are in the 'input' group.");
+        log::error!("gestro: failed to grab mouse device: {e}. Make sure you are in the 'input' group.");
         return;
     }
-    log::info!("pie: mouse grabbed successfully");
+    log::info!("gestro: mouse grabbed successfully");
 
-    let mouse_name = mouse.name().unwrap_or("pie-virtual").to_string();
+    let mouse_name = mouse.name().unwrap_or("gestro-virtual").to_string();
     let mouse_id = mouse.input_id();
     let mut vdev = match create_virtual_device(&mouse_name, &mouse_id) {
         Ok(d) => d,
         Err(e) => {
-            log::error!("pie: failed to create uinput virtual device: {e}. Make sure /dev/uinput is accessible.");
+            log::error!("gestro: failed to create uinput virtual device: {e}. Make sure /dev/uinput is accessible.");
             // Release grab before returning
             let _ = mouse.ungrab();
             return;
@@ -136,14 +136,14 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
                 let _ = mouse.ungrab();
                 engine = GestureEngine::new(engine.threshold_px);
                 paused = true;
-                log::info!("pie: mouse ungrabbed (settings open)");
+                log::info!("gestro: mouse ungrabbed (settings open)");
             }
             Ok(InputMessage::Resume) if paused => {
                 if let Err(e) = mouse.grab() {
-                    log::error!("pie: failed to re-grab mouse: {e}");
+                    log::error!("gestro: failed to re-grab mouse: {e}");
                 } else {
                     paused = false;
-                    log::info!("pie: mouse re-grabbed (settings closed)");
+                    log::info!("gestro: mouse re-grabbed (settings closed)");
                 }
             }
             _ => {}
@@ -153,7 +153,7 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
         let events = match mouse.fetch_events() {
             Ok(e) => e,
             Err(e) => {
-                log::error!("pie: evdev error: {e}");
+                log::error!("gestro: evdev error: {e}");
                 break;
             }
         };
@@ -203,7 +203,7 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     }
 
     let _ = mouse.ungrab();
-    log::info!("pie: mouse ungrabbed, input thread exiting");
+    log::info!("gestro: mouse ungrabbed, input thread exiting");
 }
 
 fn handle_outcome(
@@ -219,10 +219,10 @@ fn handle_outcome(
         GestureOutcome::Gesture(dir) => {
             let cfg = config.lock().unwrap();
             if let Some(Some(shortcut)) = cfg.directions.get(&dir) {
-                log::info!("pie: gesture {:?} → {:?}", dir, shortcut.keys);
+                log::info!("gestro: gesture {:?} → {:?}", dir, shortcut.keys);
                 emit_shortcut(vdev, shortcut);
             } else {
-                log::debug!("pie: gesture {:?} — no shortcut bound", dir);
+                log::debug!("gestro: gesture {:?} — no shortcut bound", dir);
             }
         }
     }

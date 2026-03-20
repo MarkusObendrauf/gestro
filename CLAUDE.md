@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**pie** — an OS-wide mouse gesture launcher. Hold right-click, move in one of 8 compass directions, release → fires a keyboard shortcut. Invisible to the user; configured via a Tauri settings window.
+**gestro** — an OS-wide mouse gesture launcher. Hold right-click, move in one of 8 compass directions, release → fires a keyboard shortcut. Invisible to the user; configured via a Tauri settings window.
 
 ## Commands
 
@@ -31,7 +31,7 @@ npm run tauri build
 | File | Purpose |
 |---|---|
 | `lib.rs` | Tauri entry: system tray, background input thread, `get_config`/`save_config` commands |
-| `config.rs` | `Config` struct, load/save JSON at `~/.config/pie/config.json` |
+| `config.rs` | `Config` struct, load/save JSON at `~/.config/gestro/config.json` |
 | `gesture.rs` | State machine (Idle → Pressed → Gesturing) + `atan2` direction calc |
 | `shortcut.rs` | Key name strings → `uinput::event::keyboard::Key` mapping |
 | `input/mod.rs` | Platform dispatch: re-exports `linux::run` on Linux |
@@ -44,7 +44,7 @@ The input thread is a plain `std::thread` (evdev is blocking). Config updates ar
 | File | Purpose |
 |---|---|
 | `routes/+page.svelte` | Main page: loads config via `invoke`, renders wheel, threshold slider, save |
-| `lib/PieWheel.svelte` | SVG annular pie with 8 sectors; emits `onSelect(dir)` on click |
+| `lib/GestroWheel.svelte` | SVG annular wheel with 8 sectors; emits `onSelect(dir)` on click |
 | `lib/ShortcutRecorder.svelte` | Modal dialog; captures keydown → key combo; emits `onConfirm(keys)` |
 | `lib/types.ts` | `Config`, `Direction`, `Shortcut` types + `formatShortcut` helper |
 
@@ -54,7 +54,7 @@ User must be in the `input` group and `/dev/uinput` must be accessible:
 
 ```sh
 sudo usermod -a -G input $USER
-# udev rule at /etc/udev/rules.d/99-pie.rules:
+# udev rule at /etc/udev/rules.d/99-gestro.rules:
 # KERNEL=="uinput", MODE="0660", GROUP="input"
 # SUBSYSTEM=="input", GROUP="input", MODE="0660"
 sudo udevadm control --reload-rules && sudo udevadm trigger

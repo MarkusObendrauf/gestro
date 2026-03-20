@@ -122,7 +122,7 @@ pub fn run() {
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("pie")
+                .tooltip("gestro")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "settings" => {
                         if let Some(win) = app.get_webview_window("main") {
@@ -156,5 +156,5 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![get_config, save_config])
         .run(tauri::generate_context!())
-        .expect("error while running pie");
+        .expect("error while running gestro");
 }

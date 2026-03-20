@@ -66,7 +66,7 @@
   width="400"
   height="400"
   role="img"
-  aria-label="Pie gesture wheel"
+  aria-label="Gestro gesture wheel"
 >
   <!-- Sectors -->
   {#each DIRS as dir}
@@ -139,7 +139,7 @@
     font-size="16"
     font-weight="700"
     fill="#333333"
-  >pie</text>
+  >gestro</text>
   <text
     x={CX} y={CY + 10}
     text-anchor="middle"

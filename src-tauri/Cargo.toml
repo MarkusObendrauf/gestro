@@ -1,5 +1,5 @@
 [package]
-name = "pie"
+name = "gestro"
 version = "0.1.0"
 description = "OS-wide mouse gesture launcher"
 authors = ["you"]
