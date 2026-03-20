@@ -1,5 +1,6 @@
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::config::Config;
 use crate::gesture::{GestureEngine, GestureEvent, GestureOutcome, Point};
@@ -240,15 +241,6 @@ unsafe fn post_right_click(pos: CGPoint) {
 // ---------------------------------------------------------------------------
 
 pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessage>) {
-    // Check Accessibility permission — required for kCGHIDEventTap to intercept events.
-    if unsafe { AXIsProcessTrusted() } == 0 {
-        log::error!(
-            "gestro: Accessibility permission not granted. \
-             Open System Settings → Privacy & Security → Accessibility and enable gestro."
-        );
-        return;
-    }
-
     let threshold = config.lock().unwrap().threshold_px;
     let state = Arc::new(Mutex::new(SharedState {
         engine: GestureEngine::new(threshold),
@@ -260,26 +252,44 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     // It is reclaimed via Arc::from_raw at the end of this function.
     let state_ptr = Arc::into_raw(Arc::clone(&state)) as *mut c_void;
 
-    let tap = unsafe {
-        CGEventTapCreate(
-            HID_TAP,
-            HEAD_INSERT,
-            TAP_DEFAULT,
-            EVENT_MASK,
-            tap_callback,
-            state_ptr,
-        )
-    };
+    // Retry creating the event tap until it succeeds.  When launched at login
+    // the Accessibility permission check can return false until the user grants
+    // access in System Settings, or until the security subsystem finishes
+    // initialising — so we wait and try again every 5 seconds rather than
+    // giving up immediately.
+    let tap = loop {
+        if unsafe { AXIsProcessTrusted() } == 0 {
+            log::warn!(
+                "gestro: Accessibility permission not granted – retrying in 5 s. \
+                 Open System Settings → Privacy & Security → Accessibility and enable gestro."
+            );
+        } else {
+            let t = unsafe {
+                CGEventTapCreate(
+                    HID_TAP,
+                    HEAD_INSERT,
+                    TAP_DEFAULT,
+                    EVENT_MASK,
+                    tap_callback,
+                    state_ptr,
+                )
+            };
+            if !t.is_null() {
+                break t;
+            }
+            log::warn!("gestro: CGEventTapCreate failed – retrying in 5 s");
+        }
 
-    if tap.is_null() {
-        log::error!(
-            "gestro: CGEventTapCreate failed. \
-             Make sure Accessibility permission is granted for gestro."
-        );
-        // Reclaim the leaked Arc to avoid a memory leak.
-        unsafe { drop(Arc::from_raw(state_ptr as *const Mutex<SharedState>)) };
-        return;
-    }
+        // Check for a Stop message while waiting so we don't block shutdown.
+        match rx.try_recv() {
+            Ok(InputMessage::Stop) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                unsafe { drop(Arc::from_raw(state_ptr as *const Mutex<SharedState>)) };
+                return;
+            }
+            _ => {}
+        }
+        std::thread::sleep(Duration::from_secs(5));
+    };
 
     let source = unsafe { CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0) };
     let rl = unsafe { CFRunLoopGetCurrent() };
@@ -288,9 +298,22 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
 
     log::info!("gestro: CGEventTap active");
 
+    // Re-arm counter: macOS can auto-disable an event tap if it considers the
+    // callback too slow.  Re-enable the tap every ~5 s so it recovers.
+    let mut rearm_ticks: u32 = 0;
+
     // Run the CFRunLoop in 50 ms slices, checking the mpsc channel between iterations.
     loop {
         unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false) };
+
+        rearm_ticks += 1;
+        if rearm_ticks >= 100 {
+            rearm_ticks = 0;
+            let paused = state.lock().unwrap().paused;
+            if !paused {
+                unsafe { CGEventTapEnable(tap, true) };
+            }
+        }
 
         match rx.try_recv() {
             Ok(InputMessage::Stop) => break,
