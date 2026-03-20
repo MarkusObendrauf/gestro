@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 use config::Config;
 use input::InputMessage;
@@ -42,8 +42,10 @@ pub fn run() {
     let cfg = config::load();
     let shared_config: Arc<Mutex<Config>> = Arc::new(Mutex::new(cfg));
 
-    // Channel for sending messages to the input thread.
     let (tx, rx) = std::sync::mpsc::sync_channel::<InputMessage>(8);
+    // Clone before moving tx into Tauri's managed state so we can use it in
+    // the window-event closure below.
+    let tx_for_window = tx.clone();
 
     // Spawn the input backend on a dedicated OS thread.
     #[cfg(target_os = "linux")]
@@ -58,8 +60,42 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(shared_config)
         .manage(tx)
-        .setup(|app| {
+        .setup(move |app| {
+            // Hide the window immediately so the app starts as a tray-only process.
+            // We still let it initialize as `visible: true` in tauri.conf.json so
+            // that the Wayland xdg_toplevel configure/ack handshake completes at
+            // startup; without this, WM decoration buttons (close/min/max) are
+            // unresponsive until the user triggers a maximize cycle themselves.
+            let win = app.get_webview_window("main").unwrap();
+            let _ = win.hide();
+            let win2 = win.clone();
+            let tx_win = tx_for_window.clone();
+            win.on_window_event(move |event| match event {
+                // Intercept the OS close button: hide to tray instead of closing.
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = win2.hide();
+                    let _ = tx_win.try_send(InputMessage::Resume);
+                }
+                // Window lost focus (minimized, another window clicked, etc.):
+                // re-enable gesture detection. Also hide to tray if minimized.
+                WindowEvent::Focused(false) => {
+                    let _ = tx_win.try_send(InputMessage::Resume);
+                    if win2.is_minimized().unwrap_or(false) {
+                        let _ = win2.hide();
+                    }
+                }
+                // Window gained focus: pause gesture detection so WM decorations
+                // receive native mouse events from the compositor.
+                WindowEvent::Focused(true) => {
+                    let _ = tx_win.try_send(InputMessage::Pause);
+                }
+                _ => {}
+            });
+
+            // ---------------------------------------------------------------
             // System tray
+            // ---------------------------------------------------------------
             let settings_item = MenuItemBuilder::new("Settings")
                 .id("settings")
                 .build(app)?;
@@ -77,6 +113,11 @@ pub fn run() {
                         if let Some(win) = app.get_webview_window("main") {
                             let _ = win.show();
                             let _ = win.set_focus();
+                            // Release the evdev grab while settings is visible so
+                            // the compositor receives native mouse events and WM
+                            // decorations (close/minimize/maximize) work normally.
+                            let tx = app.state::<std::sync::mpsc::SyncSender<InputMessage>>();
+                            let _ = tx.try_send(InputMessage::Pause);
                         }
                     }
                     "quit" => {

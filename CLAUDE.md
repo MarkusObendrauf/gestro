@@ -60,7 +60,3 @@ sudo usermod -a -G input $USER
 sudo udevadm control --reload-rules && sudo udevadm trigger
 # then log out and back in
 ```
-
-## Version control
-
-This repo uses **Jujutsu (jj)** as the primary VCS with Git as the backend. Prefer `jj` commands over `git`.

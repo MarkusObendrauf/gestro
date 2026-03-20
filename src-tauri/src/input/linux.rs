@@ -1,12 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 use evdev::{Device, EventType, InputEventKind, Key, RelativeAxisType};
-use uinput::event::relative::Position;
+use uinput::event::controller::{Controller, Mouse};
+use uinput::event::relative::{Position, Wheel};
 
 use crate::config::Config;
 use crate::gesture::{GestureEngine, GestureEvent, GestureOutcome, Point};
 use crate::input::InputMessage;
-use crate::shortcut::keys_to_uinput;
+use crate::shortcut::{keys_to_uinput, AnyKey};
 
 /// Find the first device that reports BTN_RIGHT and REL_X (i.e. a mouse).
 fn find_mouse() -> Option<Device> {
@@ -34,12 +35,19 @@ fn find_mouse() -> Option<Device> {
 }
 
 /// Build a uinput virtual keyboard + mouse for re-emitting events.
-fn create_virtual_device() -> Result<uinput::Device, uinput::Error> {
+fn create_virtual_device(name: &str) -> Result<uinput::Device, uinput::Error> {
     uinput::default()?
-        .name("pie-virtual")?
+        .name(name)?
         .event(uinput::event::Keyboard::All)?
+        .event(Controller::Mouse(Mouse::Left))?
+        .event(Controller::Mouse(Mouse::Right))?
+        .event(Controller::Mouse(Mouse::Middle))?
+        .event(Controller::Mouse(Mouse::Side))?
+        .event(Controller::Mouse(Mouse::Extra))?
         .event(uinput::event::relative::Relative::Position(Position::X))?
         .event(uinput::event::relative::Relative::Position(Position::Y))?
+        .event(uinput::event::relative::Relative::Wheel(Wheel::Vertical))?
+        .event(uinput::event::relative::Relative::Wheel(Wheel::Horizontal))?
         .create()
 }
 
@@ -57,11 +65,17 @@ fn passthrough_right_click(vdev: &mut uinput::Device) {
 fn emit_shortcut(vdev: &mut uinput::Device, shortcut: &crate::config::Shortcut) {
     let codes = keys_to_uinput(&shortcut.keys);
     for key in &codes {
-        let _ = vdev.press(key);
+        match key {
+            AnyKey::Key(k) => { let _ = vdev.press(k); }
+            AnyKey::Misc(m) => { let _ = vdev.press(m); }
+        }
     }
     let _ = vdev.synchronize();
     for key in codes.iter().rev() {
-        let _ = vdev.release(key);
+        match key {
+            AnyKey::Key(k) => { let _ = vdev.release(k); }
+            AnyKey::Misc(m) => { let _ = vdev.release(m); }
+        }
     }
     let _ = vdev.synchronize();
 }
@@ -83,7 +97,8 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     }
     log::info!("pie: mouse grabbed successfully");
 
-    let mut vdev = match create_virtual_device() {
+    let mouse_name = mouse.name().unwrap_or("pie-virtual").to_string();
+    let mut vdev = match create_virtual_device(&mouse_name) {
         Ok(d) => d,
         Err(e) => {
             log::error!("pie: failed to create uinput virtual device: {e}. Make sure /dev/uinput is accessible.");
@@ -92,6 +107,9 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
             return;
         }
     };
+    // Give the compositor time to discover and register the new uinput device
+    // before any events are emitted from it.
+    std::thread::sleep(std::time::Duration::from_millis(200));
 
     let threshold = {
         let cfg = config.lock().unwrap();
@@ -99,9 +117,10 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     };
     let mut engine = GestureEngine::new(threshold);
     let mut cursor = Point::new(0.0, 0.0);
+    let mut paused = false;
 
     loop {
-        // Check for config updates / stop signal (non-blocking)
+        // Check for config updates / control signals (non-blocking)
         match rx.try_recv() {
             Ok(InputMessage::Stop) => break,
             Ok(InputMessage::UpdateConfig(new_cfg)) => {
@@ -109,7 +128,21 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
                 let mut cfg = config.lock().unwrap();
                 *cfg = new_cfg;
             }
-            Err(_) => {}
+            Ok(InputMessage::Pause) if !paused => {
+                let _ = mouse.ungrab();
+                engine = GestureEngine::new(engine.threshold_px);
+                paused = true;
+                log::info!("pie: mouse ungrabbed (settings open)");
+            }
+            Ok(InputMessage::Resume) if paused => {
+                if let Err(e) = mouse.grab() {
+                    log::error!("pie: failed to re-grab mouse: {e}");
+                } else {
+                    paused = false;
+                    log::info!("pie: mouse re-grabbed (settings closed)");
+                }
+            }
+            _ => {}
         }
 
         // Fetch events (blocking)
@@ -122,6 +155,10 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
         };
 
         for ev in events {
+            // While paused the evdev grab is released; libinput handles events
+            // normally. We drain them here so the buffer doesn't fill up.
+            if paused { continue; }
+
             match ev.kind() {
                 InputEventKind::Key(Key::BTN_RIGHT) => {
                     let outcome = if ev.value() == 1 {
@@ -138,12 +175,14 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
                 }
 
                 InputEventKind::RelAxis(RelativeAxisType::REL_X) => {
+                    let _ = vdev.write(ev.event_type().0.into(), ev.code().into(), ev.value());
                     cursor.x += ev.value() as f64;
                     let outcome = engine.process(GestureEvent::MouseMove { pos: cursor });
                     handle_outcome(outcome, &config, &mut vdev);
                 }
 
                 InputEventKind::RelAxis(RelativeAxisType::REL_Y) => {
+                    let _ = vdev.write(ev.event_type().0.into(), ev.code().into(), ev.value());
                     cursor.y += ev.value() as f64;
                     let outcome = engine.process(GestureEvent::MouseMove { pos: cursor });
                     handle_outcome(outcome, &config, &mut vdev);

@@ -6,6 +6,10 @@ pub mod linux;
 #[allow(dead_code)]
 pub enum InputMessage {
     UpdateConfig(Config),
+    /// Release the evdev grab so the compositor gets native mouse input (settings window open).
+    Pause,
+    /// Re-acquire the evdev grab (settings window closed/hidden).
+    Resume,
     Stop,
 }
 
