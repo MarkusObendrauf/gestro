@@ -29,3 +29,7 @@ log = "0.4"
 evdev = "0.12"
 uinput = "0.1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.23"
+core-foundation = "0.9"
+

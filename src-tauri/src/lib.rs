@@ -1,7 +1,10 @@
 mod config;
 mod gesture;
 mod input;
+#[cfg(target_os = "linux")]
 mod shortcut;
+#[cfg(target_os = "macos")]
+mod shortcut_macos;
 
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,7 +52,7 @@ pub fn run() {
     let tx_for_window = tx.clone();
 
     // Spawn the input backend on a dedicated OS thread.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let config_clone = Arc::clone(&shared_config);
         std::thread::spawn(move || {
