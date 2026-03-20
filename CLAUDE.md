@@ -33,11 +33,15 @@ npm run tauri build
 | `lib.rs` | Tauri entry: system tray, background input thread, `get_config`/`save_config` commands |
 | `config.rs` | `Config` struct, load/save JSON at `~/.config/gestro/config.json` |
 | `gesture.rs` | State machine (Idle → Pressed → Gesturing) + `atan2` direction calc |
-| `shortcut.rs` | Key name strings → `uinput::event::keyboard::Key` mapping |
-| `input/mod.rs` | Platform dispatch: re-exports `linux::run` on Linux |
+| `shortcut.rs` | (Linux) Key name strings → `uinput::event::keyboard::Key` mapping |
+| `shortcut_macos.rs` | (macOS) Key name strings → CGKeyCode + CGEventFlags injection |
+| `shortcut_windows.rs` | (Windows) Key name strings → Virtual Key codes + SendInput injection |
+| `input/mod.rs` | Platform dispatch: `InputMessage` type, re-exports `run_platform` per OS |
 | `input/linux.rs` | evdev grab loop → gesture engine → uinput shortcut/passthrough injection |
+| `input/macos.rs` | CGEventTap at HID level → gesture engine → CoreGraphics key injection |
+| `input/windows.rs` | WH_MOUSE_LL hook + message pump → gesture engine → SendInput key injection |
 
-The input thread is a plain `std::thread` (evdev is blocking). Config updates are sent via `std::sync::mpsc::SyncSender<InputMessage>`. The `Arc<Mutex<Config>>` is shared between the Tauri state and the input thread.
+The input thread is a plain `std::thread`. Config updates are sent via `std::sync::mpsc::SyncSender<InputMessage>`. The `Arc<Mutex<Config>>` is shared between the Tauri state and the input thread.
 
 ### Svelte (`src/`)
 
@@ -48,15 +52,6 @@ The input thread is a plain `std::thread` (evdev is blocking). Config updates ar
 | `lib/ShortcutRecorder.svelte` | Modal dialog; captures keydown → key combo; emits `onConfirm(keys)` |
 | `lib/types.ts` | `Config`, `Direction`, `Shortcut` types + `formatShortcut` helper |
 
-## Linux setup (required)
+## Platform setup
 
-User must be in the `input` group and `/dev/uinput` must be accessible:
-
-```sh
-sudo usermod -a -G input $USER
-# udev rule at /etc/udev/rules.d/99-gestro.rules:
-# KERNEL=="uinput", MODE="0660", GROUP="input"
-# SUBSYSTEM=="input", GROUP="input", MODE="0660"
-sudo udevadm control --reload-rules && sudo udevadm trigger
-# then log out and back in
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for per-platform prerequisites (Linux input group/udev, macOS Accessibility permission).

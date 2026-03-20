@@ -1,6 +1,6 @@
 # gestro
 
-An OS-wide mouse gesture launcher for Linux. Hold right-click, move in one of 8 compass directions, release — a configured keyboard shortcut fires. Completely invisible during use; configured through a system tray settings window.
+An OS-wide mouse gesture launcher for macOS, Windows, and Linux. Hold right-click, move in one of 8 compass directions, release — a configured keyboard shortcut fires. Completely invisible during use; configured through a system tray settings window.
 
 ## How it works
 
@@ -10,16 +10,13 @@ An OS-wide mouse gesture launcher for Linux. Hold right-click, move in one of 8 
 
 If you don't move far enough (configurable threshold), right-click passes through normally.
 
-## Requirements
+## Platform notes
 
-- Linux (X11 or Wayland)
-- Rust toolchain + Cargo
-- Node.js + npm
-- User in the `input` group with `/dev/uinput` access (see setup below)
+### macOS
 
-## Setup
+gestro requires Accessibility permission to intercept mouse events system-wide. On first launch macOS will prompt you; if it doesn't, go to **System Settings → Privacy & Security → Accessibility** and enable gestro.
 
-### 1. Input permissions (required)
+### Linux (X11 / Wayland)
 
 gestro needs access to raw input devices and the uinput kernel module:
 
@@ -41,19 +38,9 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 # log out and back in for group membership to take effect
 ```
 
-### 2. Install dependencies
+### Windows
 
-```sh
-npm install
-```
-
-### 3. Run
-
-```sh
-npm run tauri dev
-```
-
-gestro starts in the background with a system tray icon. Open the tray menu to show the settings window.
+No additional setup required.
 
 ## Configuration
 
@@ -61,29 +48,10 @@ The settings window shows an 8-sector wheel. Click any sector to assign a keyboa
 
 Config is saved to `~/.config/gestro/config.json`.
 
-## Building
-
-```sh
-npm run tauri build
-```
-
-The compiled binary will be in `src-tauri/target/release/gestro`.
-
-## Development
-
-```sh
-# Run with hot reload
-npm run tauri dev
-
-# Type-check the Svelte frontend
-npx svelte-check
-
-# Check the Rust backend
-cd src-tauri && cargo check
-```
-
 ## Tech stack
 
-- **Backend:** Rust, [Tauri 2](https://tauri.app/), [evdev](https://crates.io/crates/evdev), [uinput](https://crates.io/crates/uinput)
+- **Backend:** Rust, [Tauri 2](https://tauri.app/)
 - **Frontend:** SvelteKit, Svelte 5 (runes), TypeScript
-- **Input:** evdev grab loop for raw mouse events; uinput virtual device for shortcut injection
+- **Input (Linux):** evdev grab loop + uinput virtual device
+- **Input (macOS):** CGEventTap at HID level + CoreGraphics key injection
+- **Input (Windows):** WH_MOUSE_LL low-level hook + SendInput key injection
