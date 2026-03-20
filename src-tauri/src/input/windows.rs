@@ -60,7 +60,7 @@ unsafe extern "system" fn low_level_mouse_proc(
 ) -> LRESULT {
     // Per Win32 spec: if nCode < 0, must call next hook and return its value.
     if n_code < 0 {
-        return CallNextHookEx(HHOOK(std::ptr::null_mut()), n_code, w_param, l_param);
+        return CallNextHookEx(Some(HHOOK(std::ptr::null_mut())), n_code, w_param, l_param);
     }
 
     let action = HOOK_STATE.with(|cell| {
@@ -128,7 +128,7 @@ unsafe extern "system" fn low_level_mouse_proc(
 
     match action {
         Action::PassThrough => {
-            CallNextHookEx(HHOOK(std::ptr::null_mut()), n_code, w_param, l_param)
+            CallNextHookEx(Some(HHOOK(std::ptr::null_mut())), n_code, w_param, l_param)
         }
         Action::Suppress => LRESULT(1),
         Action::PassThroughRightClick { x, y } => {
@@ -229,7 +229,7 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
     loop {
         unsafe {
             let mut msg = MaybeUninit::<MSG>::uninit();
-            while PeekMessageW(msg.as_mut_ptr(), HWND(std::ptr::null_mut()), 0, 0, PM_REMOVE)
+            while PeekMessageW(msg.as_mut_ptr(), Some(HWND(std::ptr::null_mut())), 0, 0, PM_REMOVE)
                 .as_bool()
             {
                 TranslateMessage(msg.as_ptr());

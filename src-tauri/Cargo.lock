@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "gestro"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "core-foundation 0.9.4",
  "core-graphics 0.23.2",
