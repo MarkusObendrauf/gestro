@@ -1,6 +1,6 @@
 [package]
 name = "gestro"
-version = "0.1.3"
+version = "0.1.4"
 description = "OS-wide mouse gesture launcher"
 authors = ["Markus Obendrauf"]
 edition = "2021"
