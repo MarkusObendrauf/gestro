@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
   import GestroWheel from '$lib/GestroWheel.svelte';
   import ShortcutRecorder from '$lib/ShortcutRecorder.svelte';
   import type { Config, Direction } from '$lib/types';
@@ -10,6 +11,7 @@
   let selected = $state<Direction | null>(null);
   let saved = $state(false);
   let saveError = $state<string | null>(null);
+  let autostart = $state(false);
 
   onMount(async () => {
     try {
@@ -17,7 +19,26 @@
     } catch (e) {
       console.error('Failed to load config', e);
     }
+    try {
+      autostart = await isEnabled();
+    } catch (e) {
+      console.error('Failed to load autostart state', e);
+    }
   });
+
+  async function toggleAutostart() {
+    try {
+      if (autostart) {
+        await disable();
+        autostart = false;
+      } else {
+        await enable();
+        autostart = true;
+      }
+    } catch (e) {
+      console.error('Failed to toggle autostart', e);
+    }
+  }
 
   function openRecorder(dir: Direction) {
     selected = dir;
@@ -70,6 +91,11 @@
           bind:value={config.threshold_px}
         />
         <span class="threshold-val">{config.threshold_px}px</span>
+      </label>
+
+      <label class="autostart-row">
+        <input type="checkbox" checked={autostart} onchange={toggleAutostart} />
+        <span>Launch at login</span>
       </label>
 
       <button class="save-btn" class:saved onclick={handleSave}>
@@ -173,6 +199,24 @@
     font-size: 12px;
     min-width: 32px;
     text-align: right;
+  }
+
+  .autostart-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: #888888;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .autostart-row input[type='checkbox'] {
+    accent-color: #4fc3f7;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
   }
 
   .save-btn {
