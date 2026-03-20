@@ -26,14 +26,10 @@
       console.error('Failed to load autostart state', e);
     }
 
-    // Measure true content size by temporarily lifting the min-height
-    // constraint (which otherwise clamps the element to the window height).
+    // Fit window to content
     await tick();
-    appEl!.style.minHeight = '0';
-    const h = appEl!.offsetHeight;
-    const w = appEl!.offsetWidth;
-    appEl!.style.minHeight = '';
-
+    const h = appEl!.scrollHeight;
+    const w = appEl!.scrollWidth;
     const win = getCurrentWindow();
     await win.setMinSize(new LogicalSize(w, h));
     const current = await win.outerSize();
