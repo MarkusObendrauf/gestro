@@ -39,15 +39,21 @@ const SESSION_TAP: u32 = 1;
 /// Event type constants
 const ET_RIGHT_DOWN: u32 = 3; // kCGEventRightMouseDown
 const ET_RIGHT_UP: u32 = 4; // kCGEventRightMouseUp
-const ET_MOUSE_MOVED: u32 = 5; // kCGEventMouseMoved
 const ET_RIGHT_DRAGGED: u32 = 7; // kCGEventRightMouseDragged
 
 /// kCGMouseButtonRight
 const MOUSE_BTN_RIGHT: u32 = 2;
 
-/// Event mask covering the four event types we care about.
+/// Special pseudo-types sent to the callback when macOS auto-disables the tap.
+const ET_TAP_DISABLED_TIMEOUT: u32 = 0xFFFFFFFE; // kCGEventTapDisabledByTimeout
+const ET_TAP_DISABLED_USER: u32 = 0xFFFFFFFF; // kCGEventTapDisabledByUserInput
+
+/// Event mask: right-button events + right-drag movement.
+/// We intentionally omit kCGEventMouseMoved (type 5) — that fires on every mouse
+/// movement even when no button is held, flooding the callback and causing macOS
+/// to auto-disable the tap.  Right-drag movement arrives as ET_RIGHT_DRAGGED.
 const EVENT_MASK: u64 =
-    (1 << ET_RIGHT_DOWN) | (1 << ET_RIGHT_UP) | (1 << ET_MOUSE_MOVED) | (1 << ET_RIGHT_DRAGGED);
+    (1 << ET_RIGHT_DOWN) | (1 << ET_RIGHT_UP) | (1 << ET_RIGHT_DRAGGED);
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
@@ -108,6 +114,8 @@ struct SharedState {
     engine: GestureEngine,
     config: Arc<Mutex<Config>>,
     paused: bool,
+    /// Stored so the callback can immediately re-enable the tap on timeout.
+    tap: CFMachPortRef,
 }
 
 // SharedState is only ever accessed on the input thread (single-threaded CFRunLoop),
@@ -159,6 +167,16 @@ unsafe fn handle_event(
         }
 
         match event_type {
+            // macOS auto-disabled our tap (callback was too slow or the system
+            // decided to revoke it).  Re-enable immediately.
+            ET_TAP_DISABLED_TIMEOUT | ET_TAP_DISABLED_USER => {
+                if !s.paused {
+                    unsafe { CGEventTapEnable(s.tap, true) };
+                    log::warn!("gestro: event tap auto-disabled by macOS; re-enabled");
+                }
+                return std::ptr::null_mut();
+            }
+
             ET_RIGHT_DOWN => {
                 let pos = CGEventGetLocation(event);
                 let _ = s.engine.process(GestureEvent::RightDown {
@@ -192,7 +210,7 @@ unsafe fn handle_event(
                 }
             }
 
-            ET_MOUSE_MOVED | ET_RIGHT_DRAGGED => {
+            ET_RIGHT_DRAGGED => {
                 let pos = CGEventGetLocation(event);
                 let _ = s.engine.process(GestureEvent::MouseMove {
                     pos: Point::new(pos.x, pos.y),
@@ -246,6 +264,7 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
         engine: GestureEngine::new(threshold),
         config: Arc::clone(&config),
         paused: false,
+        tap: std::ptr::null_mut(),
     }));
 
     // Leak one Arc refcount into the raw pointer passed as userInfo.
@@ -290,6 +309,9 @@ pub fn run(config: Arc<Mutex<Config>>, rx: std::sync::mpsc::Receiver<InputMessag
         }
         std::thread::sleep(Duration::from_secs(5));
     };
+
+    // Store tap in SharedState so the callback can re-enable it on timeout.
+    state.lock().unwrap().tap = tap;
 
     let source = unsafe { CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0) };
     let rl = unsafe { CFRunLoopGetCurrent() };
